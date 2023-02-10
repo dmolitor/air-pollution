@@ -17,6 +17,47 @@ bufferize_points <- function(points, buffer = 10, unit = c("m", "km", "mi")) {
   return(points)
 }
 
+# Generic method for data extraction from pollutionSeq and
+# pollutionSeqCollection classes
+enframe <- function(x, ...) {
+  UseMethod("enframe")
+}
+
+# Enframe data from pollutionSeq object
+enframe.pollutionSeq <- function(x, ...) {
+  event_date <- lubridate::dmy(paste("1", attr(x, "event_month")))
+  pollution_dat <- tibble::enframe(unclass(x), "dates", "pm")
+  pollution_dat <- cbind(
+    pollution_dat[, "dates"],
+    do.call(rbind, pollution_dat[["pm"]])
+  )
+  if (!is.null(attr(x, "summary_names"))) {
+    addtl_names <- attr(x, "summary_names")
+  } else {
+    addtl_names <- "pm"
+  }
+  names(pollution_dat) <- c("dates", addtl_names)
+  pollution_dat$dates <- lubridate::my(pollution_dat$dates)
+  return(tibble::tibble(pollution_dat))
+}
+
+# Enframe data from pollutionSeqCollection object
+enframe.pollutionSeqCollection <- function(x, ...) {
+  pol_data <- lapply(
+    1:length(x),
+    \(i) {
+      dplyr::mutate(
+        enframe(x[[i]]),
+        id = i,
+        event_seq = 1:dplyr::n(),
+        event_seq = event_seq - median(event_seq)
+      )
+    }
+  )
+  pol_data <- dplyr::bind_rows(pol_data)
+  return(pol_data)
+}
+
 # Create pop-up text for air monitor icons
 monitor_popup <- function(city, state, reporting_agency) {
   paste(
@@ -38,6 +79,44 @@ monitor_popup <- function(city, state, reporting_agency) {
 # Get the month(s) from a numeric/Date vector as a string
 month_extract <- function(x, ...) {
   as.character(lubridate::month(x, label = TRUE, abbr = FALSE, ...))
+}
+
+# Check pollutionSeqCollection object
+check_pollutionSeqCollection <- function(x) {
+  vapply(
+    x,
+    \(.x) any(
+      vapply(.x, \(.y) identical(.y, numeric(0)), logical(1))
+    ),
+    logical(1)
+  )
+}
+
+# Constructor for pollutionSeqCollection object
+new_pollutionSeqCollection <- function(x, summary_names = NULL) {
+  contains_missing_data <- check_pollutionSeqCollection(x)
+  if (any(contains_missing_data)) {
+    missing_idx <- which(contains_missing_data)
+    stop(
+      "Object is missing data at the following indices: ",
+      paste0(missing_idx, collapse = ", "),
+      call. = FALSE
+    )
+  }
+  event_dates <- c()
+  for(.x in x) {
+    event_dates <- append(event_dates, lubridate::my(attr(.x, "event_month")))
+  }
+  date_range <- range(event_dates)
+  pollutionSeqCollection <- structure(
+    x,
+    class = "pollutionSeqCollection",
+    date_min = date_range[[1]],
+    date_max = date_range[[2]],
+    n_collection = length(x),
+    summary_names = summary_names
+  )
+  return(pollutionSeqCollection)
 }
 
 # Function that creates a leaflet plot of PM monitors and surface-level PM
@@ -101,21 +180,89 @@ plot_pollution <- function(monitors,
 
 # Plot method for pollutionSeq
 plot.pollutionSeq <- function(x, trend = NULL, ...) {
-  event_date <- lubridate::dmy(paste("1", attr(x, "event_month")))
-  pollution_dat <- data.frame(
-    "dates" = lubridate::dmy(paste("1", names(x))),
-    "pm" = unname(unlist(unclass(x)))
-  )
-  p <- ggplot2::ggplot(pollution_dat, ggplot2::aes(x = dates, y = pm)) +
-    ggplot2::geom_line(group = 1) +
-    ggplot2::geom_point(color = "red") +
+  multi_summary <- ifelse(!is.null(attr(x, "summary_names")), TRUE, FALSE)
+  pollution_dat <- enframe(x)
+  if (multi_summary) {
+    pollution_dat <- tidyr::pivot_longer(
+      data = pollution_dat,
+      cols = -dates,
+      names_to = "pm_summary",
+      values_to = "pm"
+    )
+  }
+  event_date <- lubridate::my(attr(x, "event_month"))
+  if (multi_summary) {
+    p <- ggplot2::ggplot(
+      pollution_dat,
+      ggplot2::aes(x = dates, y = pm, group = pm_summary, color = pm_summary)
+    )
+  } else {
+    p <- ggplot2::ggplot(
+      pollution_dat,
+      ggplot2::aes(x = dates, y = pm, group = 1)
+    )
+  }
+  p <- p +
+    ggplot2::geom_line() +
+    ggplot2::geom_point() +
     ggplot2::geom_vline(
       xintercept = event_date,
-      color = "blue",
+      color = "thistle4",
       linetype = "dashed"
     ) +
     ggplot2::scale_x_date(date_breaks = "1 month", date_labels = "%B") +
-    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5))
+    theme_minimal_light() +
+    ggplot2::theme(
+      axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5),
+      legend.key = ggplot2::element_rect(fill = "white")
+    )
+  if (!is.null(trend)) {
+    p <- p + ggplot2::geom_smooth(method = trend, ...)
+  }
+  return(p)
+}
+
+# Plot method for pollutionSeqCollection
+plot.pollutionSeqCollection <- function(x, trend = NULL, summary_fn = mean, ...) {
+  multi_summary <- ifelse(!is.null(attr(x, "summary_names")), TRUE, FALSE)
+  pollution_dat <- enframe(x)
+  pollution_dat <- dplyr::summarise(
+    dplyr::group_by(pollution_dat, event_seq),
+    dplyr::across(.fns = summary_fn),
+    .groups = "drop"
+  )
+  if (multi_summary) {
+    pollution_dat <- tidyr::pivot_longer(
+      data = pollution_dat,
+      cols = attr(x, "summary_names"),
+      names_to = "pm_summary",
+      values_to = "pm"
+    )
+  }
+  event_seq_range <- range(pollution_dat$event_seq)
+  if (multi_summary) {
+    p <- ggplot2::ggplot(
+      pollution_dat,
+      ggplot2::aes(event_seq, pm, group = pm_summary, color = pm_summary)
+    )
+  } else {
+    p <- ggplot2::ggplot(
+      pollution_dat,
+      ggplot2::aes(x = event_seq, y = pm, group = 1)
+    )
+  }
+  p <- p +
+    ggplot2::geom_line() +
+    ggplot2::geom_point() +
+    ggplot2::geom_vline(
+      xintercept = 0,
+      color = "thistle4",
+      linetype = "dashed"
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = seq(event_seq_range[[1]], event_seq_range[[2]], by = 2)
+    ) +
+    theme_minimal_light()
   if (!is.null(trend)) {
     p <- p + ggplot2::geom_smooth(method = trend, ...)
   }
@@ -126,10 +273,18 @@ plot.pollutionSeq <- function(x, trend = NULL, ...) {
 point_pollution_seq <- function(x,
                                 pm,
                                 meas_start_date,
+                                summary_fns = terra_weighted_mean,
                                 time_window = 12,
                                 geo_radius = 10,
-                                geo_unit = "mi") {
+                                geo_unit = "mi",
+                                detrend = FALSE,
+                                ...) {
   stopifnot(inherits(x, "sfc_POINT"), length(x) == 1)
+  multi_summary <- ifelse(
+    length(summary_fns) > 1 || is.list(summary_fns),
+    yes = TRUE,
+    no = FALSE
+  )
   geo_loc <- sf::st_coordinates(x)
   x <- sf::st_as_sf(bufferize_points(x, buffer = geo_radius, unit = geo_unit))
   date_seq <- seq_time(meas_start_date, window = time_window)
@@ -139,10 +294,63 @@ point_pollution_seq <- function(x,
     .data = dplyr::group_by(dplyr::filter(pm, !is.na(pm[[2]])), ID),
     dplyr::across(
       .cols = -fraction,
-      .fns = \(.x) sum(.x * fraction)/sum(fraction)
+      .fns = summary_fns
     )
   )
-  pm <- as.list(dplyr::select(pm, -ID))
+  if (multi_summary) {
+    pm <- tidyr::pivot_longer(
+      data = pm,
+      cols = -ID,
+      names_to = c(".value", "summary_name"),
+      names_pattern = "([^_]*)_(.*)", values_drop_na = TRUE
+    )
+  }
+  if (multi_summary) {
+    summary_names <- pm[["summary_name"]]
+    pm <- as.list(dplyr::select(pm, -c(ID, summary_name)))
+    if (detrend) {
+      dates <- lubridate::my(date_seq)
+      seq_start <- c(lubridate::year(min(dates)), lubridate::month(min(dates)))
+      seq_end <- c(lubridate::year(max(dates)), lubridate::month(max(dates)))
+      pm_rem_vals <- lapply(1:length(summary_names), function(i) {
+        pm_ts <- ts(
+          data = vapply(pm, \(.x) .x[[i]], numeric(1)),
+          start = seq_start,
+          end = seq_end,
+          frequency = 12
+        )
+        pm_rem <- stl_remainder(
+          x = pm_ts,
+          start = seq_start,
+          end = seq_end,
+          robust = TRUE,
+          ...
+        )
+        return(pm_rem)
+      })
+      pm <- setNames(
+        as.list(as.data.frame(t(do.call(cbind, pm_rem_vals)))),
+        names(pm)
+      )
+    }
+  } else {
+    summary_names <- NULL
+    pm <- as.list(dplyr::select(pm, -ID))
+    if (detrend) {
+      dates <- lubridate::my(date_seq)
+      seq_start <- c(lubridate::year(min(dates)), lubridate::month(min(dates)))
+      seq_end <- c(lubridate::year(max(dates)), lubridate::month(max(dates)))
+      pm_ts <- ts(unlist(pm), start = seq_start, end = seq_end, frequency = 12)
+      pm_rem <- stl_remainder(
+        x = pm_ts,
+        start = seq_start,
+        end = seq_end,
+        robust = TRUE,
+        ...
+      )
+      pm <- setNames(as.list(pm_rem), names(pm))
+    }
+  }
   pollutionSeq <- structure(
     as.list(pm),
     class = "pollutionSeq",
@@ -152,7 +360,9 @@ point_pollution_seq <- function(x,
     geo_radius = geo_radius,
     geo_unit = geo_unit,
     geo_location = geo_loc,
-    geo_crs = sf::st_crs(x)
+    geo_crs = sf::st_crs(x),
+    summary_names = summary_names,
+    detrended = detrend
   )
   return(pollutionSeq)
 }
@@ -169,6 +379,17 @@ print.pollutionSeq <- function(x, ...) {
   cat(")\n")
   cat("CRS             :", attr(x, "geo_crs")[["input"]], "\n")
   return(invisible(x))
+}
+
+# Print method for pollutionSeqCollection
+print.pollutionSeqCollection <- function(x, ...) {
+  cat("Collection of", attr(x, "n_collection"), "pollutionSeq objects\n")
+  cat(
+    "Date range:",
+    as.character(attr(x, "date_min")), "to",
+    as.character(attr(x, "date_max")), "\n"
+  )
+  invisible(x)
 }
 
 # Get all raster levels in a certain year
@@ -201,7 +422,7 @@ seq_time <- function(date, window = 12) {
   )
   date_seq <- seq(window_start, window_end, by = "month")
   month_seq <- month_extract(date_seq)
-  year_seq <- vapply(date_seq, year, numeric(1))
+  year_seq <- vapply(date_seq, lubridate::year, numeric(1))
   paste0(month_seq, ".", year_seq)
 }
 
@@ -260,55 +481,55 @@ states <- function() {
   )
 }
 
-# Parallel Vectorize function
-# future_vectorize <- function(FUN,
-#                              vectorize.args = arg.names,
-#                              SIMPLIFY = TRUE,
-#                              USE.NAMES = TRUE) {
-#   arg.names <- as.list(formals(FUN))
-#   arg.names[["..."]] <- NULL
-#   arg.names <- names(arg.names)
-#   vectorize.args <- as.character(vectorize.args)
-#   if (!length(vectorize.args)) 
-#     return(FUN)
-#   if (!all(vectorize.args %in% arg.names)) 
-#     stop("must specify names of formal arguments for 'vectorize'")
-#   collisions <- arg.names %in% c("FUN", "SIMPLIFY", "USE.NAMES", 
-#                                  "vectorize.args")
-#   if (any(collisions)) 
-#     stop(sQuote("FUN"), " may not have argument(s) named ", 
-#          paste(sQuote(arg.names[collisions]), collapse = ", "))
-#   rm(arg.names, collisions)
-#   (function() {
-#     FUNV <- function() {
-#       args <- lapply(as.list(match.call())[-1L], eval, 
-#                      parent.frame())
-#       names <- if (is.null(names(args))) 
-#         character(length(args))
-#       else names(args)
-#       dovec <- names %in% vectorize.args
-#       do.call(
-#         future_mapply,
-#         c(
-#           FUN = FUN,
-#           args[dovec],
-#           MoreArgs = list(args[!dovec]), 
-#           SIMPLIFY = SIMPLIFY,
-#           USE.NAMES = USE.NAMES
-#         )
-#       )
-#     }
-#     formals(FUNV) <- formals(FUN)
-#     environment(FUNV) <- parent.env(environment())
-#     FUNV
-#   })()
-# }
- 
-# Get pollution for sets of points
-# point_pollution <- future_vectorize(
-#   FUN = point_pollution_seq,
-#   vectorize.args = c("x", "meas_start_date")
-# )
+# For a numeric vector (assumed to be monthly values), decompose using STL
+# and return the remainder values
+stl_remainder <- function(x,
+                          start = c(1998, 1),
+                          end = c(2021, 12),
+                          verbose = FALSE,
+                          seasonal_only = FALSE,
+                          ...) {
+  pm_ts <- ts(
+    data = x,
+    start = start,
+    end = end,
+    frequency = 12
+  )
+  pm_stl <- stl(pm_ts, s.window = "periodic")
+  if (seasonal_only) {
+    stl_rem <- as.numeric(pm_stl$time.series[, "remainder"])
+               + as.numeric(pm_stl$time.series[, "trend"])
+  } else {
+    stl_rem <- as.numeric(pm_stl$time.series[, "remainder"])
+  }
+  if (verbose) {
+    plot(pm_stl)
+    cat("% of total variance explained:\n")
+    print(apply(pm_stl$time.series, 2, var) / var(pm_ts))
+  }
+  return(stl_rem)
+}
+
+# Calculate a weighted mean within a terra dataframe (respects NSE)
+terra_weighted_mean <- function(x) {
+  num <- sum(x * get("fraction", envir = parent.frame()))
+  denom <- sum(get("fraction", envir = parent.frame()))
+  return(num/denom)
+}
+
+# Cross between ggplot2's theme_minimal and theme_light
+theme_minimal_light <- function(...) {
+  ggplot2::theme(
+    axis.ticks = ggplot2::element_blank(),
+    legend.title = ggplot2::element_text(face = "bold"),
+    panel.background = ggplot2::element_blank(),
+    panel.border = ggplot2::element_blank(),
+    panel.grid = ggplot2::element_line(color = "gray90"),
+    plot.title = ggplot2::element_text(face = "bold", hjust = 0.5),
+    strip.background = ggplot2::element_blank(),
+    ...
+  )
+}
 
 # Was a monitor active in a given Year-Month?
 was_active <- function(year, month, monitor_start, monitor_end, is_active) {

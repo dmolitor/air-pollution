@@ -1,0 +1,296 @@
+---
+title: "Diving Into Pollution Stuff"
+format:
+  html:
+    page-layout: "full"
+    code-fold: false
+    code-tools:
+      source: https://github.com/dmolitor/air-pollution
+    self-contained: true
+    theme: journal
+    toc: false
+execute: 
+  cache: false
+highlight-style: dracula
+---
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+library(sf)
+source(here::here("src/utils.R"))
+
+# PM2.5 Raster data
+surface_pm2.5_files <- list.files(
+  path = here::here("data/monthly-pm2.5/"),
+  full.names = TRUE,
+  pattern = "*.nc"
+)
+surface_pm2.5 <- terra::rast(surface_pm2.5_files)
+names(surface_pm2.5) <- unlist(
+  lapply(1998:2021, \(.x) paste0(month_extract(1:12), ".", .x))
+)
+
+# Load monitor data
+all_monitors <- readRDS(here::here("data/monitor-pollution.Rds"))
+```
+
+## Distribution of PM2.5 monitor start dates (2000 - 2021)
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-subcap: "Contiguous 48 states"
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+ggplot2::ggplot(
+    dplyr::filter(all_monitors, monitor_start_date >= as.Date("2000/1/1")),
+    ggplot2::aes(x = monitor_start_date)
+  ) +
+  ggplot2::geom_histogram(bins = 100) +
+  ggplot2::scale_x_date(
+    date_breaks = "1 year",
+    date_labels = "%B %Y"
+  ) +
+  ggplot2::labs(
+    x = "",
+    y = "Count",
+    title = "Distribution of PM2.5 Monitor Start Dates"
+  ) +
+  theme_minimal_light() +
+  ggplot2::theme(
+    axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, face = "bold"),
+    axis.title = ggplot2::element_text(face = "bold"),
+    panel.grid.minor.x = ggplot2::element_blank()
+  )
+```
+
+## Create buffers around all monitors
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-subcap: Monitors with 10 mile buffer
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+mn_shape <- tigris::states(progress_bar = FALSE) |>
+    dplyr::filter(STUSPS == "MN") |>
+    sf::st_transform(terra::crs(surface_pm2.5))
+
+mn_monitors <- all_monitors |>
+  dplyr::filter(state == "Minnesota")
+
+mn_monitors_buffered <- bufferize_points(points = mn_monitors, unit = "mi")
+
+ggplot2::ggplot(mn_shape) +
+  ggplot2::geom_sf(alpha = 0) +
+  ggplot2::geom_sf(
+    data = mn_monitors_buffered,
+    color = "cornflowerblue",
+    alpha = 0
+  ) +
+  ggplot2::geom_sf(
+    data = mn_monitors,
+    color = "burlywood4",
+    size = 0.3
+  ) +
+  ggplot2::labs(title = "PM2.5 Monitors") +
+  theme_minimal_light()
+```
+
+## Mean pollution in buffers 12 months pre/post monitor start date
+
+```{r}
+#| echo: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+all_pollution <- new_pollutionSeqCollection(all_monitors$pollution)
+
+plot(all_pollution, trend = "lm", color = "seagreen4", se = FALSE)
+```
+
+## Lots of pollution seasonality
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-subcap: "Minnesota, 2021"
+#| fig-width: 15
+#| fig-align: "center"
+mn_counties <- tigris::counties(
+    state = "27",
+    year = 2021,
+    progress_bar = FALSE
+  ) |>
+  sf::st_transform(terra::crs(surface_pm2.5))
+
+mn_pm2.5 <- terra::crop(rast_year(surface_pm2.5, year = 2021), mn_counties)
+
+mn_pm2.5_polys <- terra::extract(
+  mn_pm2.5,
+  mn_counties,
+  exact = TRUE
+)
+
+mn_counties <- mn_counties |>
+  dplyr::bind_cols(
+    mn_pm2.5_polys |>
+      dplyr::filter(!is.na(.data[[paste0("January", ".", 2021)]])) |>
+      dplyr::group_by(ID) |>
+      dplyr::summarise(
+        dplyr::across(
+          .cols = -fraction,
+          .fns = \(.x) sum(.x * fraction)/sum(fraction)
+        )
+      ) |>
+      dplyr::rename_with(.fn = ~ gsub(".2021", "", .x))
+  )
+
+# Plot it!!!
+ggplot2::ggplot(
+  data = dplyr::mutate(
+    tidyr::pivot_longer(
+      mn_counties,
+      cols = January:December,
+      names_to = "month",
+      values_to = "pm_levels"
+    ),
+    month = factor(month, month_extract(1:12), ordered = TRUE)
+  )
+) +
+  ggplot2::geom_sf(ggplot2::aes(fill = pm_levels)) +
+  ggplot2::labs(
+    title = "Mean County-level PM2.5 Pollution",
+    fill = "\U03BCg/m\U00B3"
+  ) +
+  viridis::scale_fill_viridis(option = "inferno") +
+  ggplot2::facet_wrap(~ month, nrow = 3) +
+  ggplot2::theme(
+    axis.ticks = ggplot2::element_blank(),
+    legend.title = ggplot2::element_text(face = "bold"),
+    panel.background = ggplot2::element_blank(),
+    panel.border = ggplot2::element_blank(),
+    panel.grid = ggplot2::element_line(color = "gray80"),
+    plot.title = ggplot2::element_text(face = "bold", hjust = 0.5),
+    strip.background = ggplot2::element_blank()
+  )
+```
+
+## Handling seasonal trends with STL
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+all_pol_data <- readr::read_csv(here::here("data/agg-monthly-us-pollution.csv"))
+ggplot2::ggplot(all_pol_data, ggplot2::aes(x = date, y = pm)) +
+  ggplot2::geom_line(
+    ggplot2::aes(x = date, y = pm_trend, linetype = "STL Trend"),
+    # linetype = "dotted",
+    color = "cornflowerblue"
+  ) +
+  ggplot2::geom_line(group = 1, color = "burlywood4") +
+  # ggplot2::geom_point(color = "red", size = 0.3) +
+  ggplot2::scale_x_date(date_breaks = "10 month", date_labels = "%B %Y") +
+  ggplot2::labs(
+    x = "",
+    y = "Mean PM2.5 (\U03BCg/m\U00B3)",
+    title = "U.S. Monthly PM2.5 Trends"
+  ) +
+  theme_minimal_light() +
+  ggplot2::theme(
+    axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, face = "bold"),
+    axis.title = ggplot2::element_text(face = "bold"),
+    legend.key = ggplot2::element_rect(fill = "white"),
+    legend.text = ggplot2::element_text(face = "bold"),
+    legend.title = ggplot2::element_blank(),
+    panel.grid.minor.x = ggplot2::element_blank()
+  )
+```
+
+<hr></hr>
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+all_pol_data |>
+  tidyr::pivot_longer(
+    cols = c(pm, pm_seasonal:pm_remainder),
+    names_to = "trendline",
+    values_to = "stl_pm"
+  ) |>
+  dplyr::mutate(
+    trendline = dplyr::case_when(
+      trendline == "pm_remainder" ~ "Remainder",
+      trendline == "pm_seasonal" ~ "Seasonal",
+      trendline == "pm_trend" ~ "Trend",
+      trendline == "pm" ~ "Total PM2.5"
+    ),
+    trendline = factor(
+      trendline,
+      levels = c("Total PM2.5", "Seasonal", "Trend", "Remainder")
+    )
+  ) |>
+  ggplot2::ggplot(ggplot2::aes(x = date, y = stl_pm)) +
+  ggplot2::geom_line(group = 1) +
+  ggplot2::facet_wrap(~ trendline, nrow = 4, scales = "free_y") +
+  ggplot2::scale_x_date(date_breaks = "10 month", date_labels = "%B %Y") +
+  ggplot2::labs(
+    x = "",
+    y = "Mean PM2.5 (\U03BCg/m\U00B3)",
+    title = "U.S. Monthly PM2.5 STL Trends"
+  ) +
+  theme_minimal_light() +
+  ggplot2::theme(
+    axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, face = "bold"),
+    axis.title = ggplot2::element_text(face = "bold"),
+    legend.key = ggplot2::element_rect(fill = "white"),
+    legend.text = ggplot2::element_text(face = "bold"),
+    legend.title = ggplot2::element_blank(),
+    panel.grid.minor.x = ggplot2::element_blank()
+  )
+```
+
+## Remove national trends from raster data and re-create pre/post trend
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+surface_pm2.5_detrended_files <- list.files(
+  path = here::here("data/demeaned-pm/"),
+  full.names = TRUE,
+  pattern = "*.nc"
+)
+surface_pm2.5_detrended <- terra::rast(surface_pm2.5_detrended_files)
+names(surface_pm2.5_detrended) <- unlist(
+  lapply(1998:2021, \(.x) paste0(month_extract(1:12), ".", .x))
+)
+
+# Load all monitors with de-trended pollution data
+all_monitors_detrended <- readRDS(
+  here::here("data/demeaned-pm/monitor-pollution.Rds")
+)
+all_pollution_detrended <- new_pollutionSeqCollection(
+  all_monitors_detrended$pollution
+)
+plot(all_pollution_detrended, trend = "lm", color = "seagreen4", se = FALSE)
+```
