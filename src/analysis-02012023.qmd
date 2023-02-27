@@ -1,0 +1,521 @@
+---
+title: "Pollution Analysis (01/25/2023 - 02/01/2023)"
+format:
+  html:
+    page-layout: "full"
+    code-fold: false
+    code-tools:
+      source: https://github.com/dmolitor/air-pollution
+    self-contained: true
+    theme: journal
+    toc: false
+execute: 
+  cache: false
+highlight-style: dracula
+---
+
+## Data-cleaning preamble
+
+Everything here is calculated using a rather small subset of the original set of
+$3172$ monitors spanning 1999-2020.
+To get to this subset I took the following steps:
+
+1) For all co-located monitors, I dropped all but the monitor that was **first**
+installed at that location. Drops it down to $1967$ monitors (!!! big drop).
+2) Then I create a 5-mile buffer (slightly different from last week at 10-mile
+level) around each of these monitors and drop any monitors whose radius overlaps
+with another monitor's radius. After this there are $595$ monitors (!!! again).
+
+Finally, I was a little worried about the results being skewed by the fact that
+the distribution of start dates for these monitors was heavily biased towards
+1999-2000, as shown below.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+library(sf)
+source(here::here("src/utils.R"))
+
+all_monitors <- readRDS(here::here("data/monitor-pollution.Rds"))
+all_monitors_dedup_site <- all_monitors |>
+  dplyr::group_by(geometry) |>
+  dplyr::mutate(first_monitor_start_date = min(monitor_start_date)) |>
+  dplyr::filter(monitor_start_date == first_monitor_start_date) |>
+  dplyr::slice_head(n = 1) |>
+  dplyr::ungroup() |>
+  dplyr::mutate(row_id = dplyr::cur_group_rows())
+
+all_monitors_dedup_site_buffer <- all_monitors_dedup_site |>
+  bufferize_points(buffer = 5, unit = "mi")
+
+all_monitors_dedup_site_buffer$intersects_geom <- (
+  lengths(sf::st_intersects(all_monitors_dedup_site_buffer)) > 1
+)
+all_monitors_dedup_site_buffer <- all_monitors_dedup_site_buffer |>
+  dplyr::filter(!intersects_geom)
+all_monitors_dedup_site <- all_monitors_dedup_site |>
+  dplyr::filter(row_id %in% all_monitors_dedup_site_buffer$row_id)
+
+ggplot2::ggplot(all_monitors_dedup_site) +
+  ggplot2::geom_histogram(
+    ggplot2::aes(x = monitor_start_date),
+    color = "gray40",
+    bins = 50
+  ) +
+  ggplot2::scale_x_date(date_breaks = "10 month", date_labels = "%B %Y") +
+  ggplot2::labs(x = "Monitor start date", y = "Count") +
+  theme_minimal_light() +
+  ggplot2::theme(
+    axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, face = "bold"),
+    axis.title = ggplot2::element_text(face = "bold"),
+    panel.grid.minor.x = ggplot2::element_blank()
+  )
+```
+
+<!--
+```{r}
+# Okay, not sure this is really a valid concern, but it worried me so I restricted
+# the time range of this analysis to be dates after January 1, 2000. After this
+# final restriction we have a subset of $265$ out of $3172$ original monitors 😬.
+# The distribution of monitor start dates is now much more uniform-looking.
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+# all_monitors_dedup_site_buffer <- all_monitors_dedup_site_buffer |>
+#   dplyr::filter(monitor_start_date >= as.Date("2001/01/01"))
+all_monitors_dedup_site <- all_monitors_dedup_site |>
+  dplyr::filter(row_id %in% all_monitors_dedup_site_buffer$row_id)
+
+ggplot2::ggplot(all_monitors_dedup_site) +
+  ggplot2::geom_histogram(
+    ggplot2::aes(x = monitor_start_date),
+    color = "gray40",
+    bins = 50
+  ) +
+  ggplot2::scale_x_date(date_breaks = "10 month", date_labels = "%B %Y") +
+  ggplot2::labs(x = "Monitor start date", y = "Count") +
+  theme_minimal_light() +
+  ggplot2::theme(
+    axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, face = "bold"),
+    axis.title = ggplot2::element_text(face = "bold"),
+    panel.grid.minor.x = ggplot2::element_blank()
+  )
+```
+-->
+
+But, I decided not to worry too much about this, and push onward 😬!
+Of the remaining monitors, there's pretty good geographic dispersion. So it's
+not like the only remaining monitors are clustered in a particular area.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+us_boundary <- tigris::states(progress_bar = FALSE, cb = TRUE) |>
+  dplyr::filter(NAME %in% states())
+
+ggplot2::ggplot(all_monitors_dedup_site, ggplot2::aes(color = state)) +
+  ggplot2::geom_sf(data = us_boundary, alpha = 0, inherit.aes = FALSE) +
+  ggplot2::geom_sf() +
+  theme_minimal_light() +
+  ggplot2::theme(legend.position = "none")
+```
+
+## Pollution trends for non-overlapping monitors
+
+Okay, now that we have a bunch of monitors that are non-overlapping we can see
+what the pre-post monitor installment trends look like.
+
+### Raw PM2.5 values
+
+#### Non de-trended PM2.5 values
+
+For each monitor, I've calculated the mean/median PM2.5 for the 12 months before
+and after monitor installment. The mean of individual monitor means is shown
+below.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+monitors <- readRDS(
+  here::here("data/monthly-pm2.5/monitor-raw-pollution.Rds")
+) |> dplyr::filter(row_id %in% all_monitors_dedup_site_buffer$row_id)
+pollution <- new_pollutionSeqCollection(
+  monitors$pollution,
+  summary_names = attr(monitors$pollution[[1]], "summary_names")
+)
+pm_trend <- dplyr::summarise(
+  dplyr::group_by(enframe(pollution), event_seq),
+  mean_pm = mean(Mean),
+  median_pm = median(Median)
+)
+
+ggplot2::ggplot(pm_trend, ggplot2::aes(x = event_seq, y = mean_pm, group = 1)) +
+  ggplot2::geom_line(color = "gray50") +
+  ggplot2::geom_point(color = "palegreen4") +
+  ggplot2::geom_vline(
+    xintercept = 0,
+    color = "thistle4",
+    linetype = "dashed"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = mean_pm),
+    data = dplyr::filter(pm_trend, event_seq <= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = mean_pm),
+    data = dplyr::filter(pm_trend, event_seq >= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::scale_x_continuous(
+    breaks = seq(-12, 12, by = 2)
+  ) +
+  theme_minimal_light() +
+  ggplot2::labs(
+    x = "Months pre/post monitor start month",
+    y = "Mean of monitor mean PM2.5"
+  )
+```
+
+Similarly, the median of monitor median monthly values.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+ggplot2::ggplot(pm_trend, ggplot2::aes(x = event_seq, y = median_pm, group = 1)) +
+  ggplot2::geom_line(color = "gray50") +
+  ggplot2::geom_point(color = "palegreen4") +
+  ggplot2::geom_vline(
+    xintercept = 0,
+    color = "thistle4",
+    linetype = "dashed"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = median_pm),
+    data = dplyr::filter(pm_trend, event_seq <= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = median_pm),
+    data = dplyr::filter(pm_trend, event_seq >= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::scale_x_continuous(
+    breaks = seq(-12, 12, by = 2)
+  ) +
+  theme_minimal_light() +
+  ggplot2::labs(
+    x = "Months pre/post monitor start month",
+    y = "Median of monitor median PM2.5"
+  )
+```
+
+#### PM2.5 values with seasonality removed (via STL)
+
+For each monitor, I've calculated the mean PM2.5 for the 12 months before
+and after monitor installment. Then I apply STL to this two-year time series of
+pollution values and remove the seasonal component. This feels a little hokey ...
+idk, but also feels somewhat reasonable; I'm torn. The mean of de-seasonalized
+individual monitor means is shown below.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+monitors <- readRDS(
+  here::here("data/monthly-pm2.5/monitor-detrended-pollution.Rds")
+) |> dplyr::filter(row_id %in% all_monitors_dedup_site_buffer$row_id)
+pollution <- new_pollutionSeqCollection(
+  monitors$pollution,
+  summary_names = attr(monitors$pollution[[1]], "summary_names")
+)
+pm_trend <- dplyr::summarise(
+  dplyr::group_by(enframe(pollution), event_seq),
+  mean_pm = mean(Mean),
+  median_pm = median(Median)
+)
+
+ggplot2::ggplot(pm_trend, ggplot2::aes(x = event_seq, y = mean_pm, group = 1)) +
+  ggplot2::geom_line(color = "gray50") +
+  ggplot2::geom_point(color = "palegreen4") +
+  ggplot2::geom_vline(
+    xintercept = 0,
+    color = "thistle4",
+    linetype = "dashed"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = mean_pm),
+    data = dplyr::filter(pm_trend, event_seq <= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = mean_pm),
+    data = dplyr::filter(pm_trend, event_seq >= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::scale_x_continuous(
+    breaks = seq(-12, 12, by = 2)
+  ) +
+  theme_minimal_light() +
+  ggplot2::labs(
+    x = "Months pre/post monitor start month",
+    y = "Mean of de-seasonalized monitor mean PM2.5"
+  )
+```
+
+Similarly, the median of monitor median de-seasonalized monthly values.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+ggplot2::ggplot(pm_trend, ggplot2::aes(x = event_seq, y = median_pm, group = 1)) +
+  ggplot2::geom_line(color = "gray50") +
+  ggplot2::geom_point(color = "palegreen4") +
+  ggplot2::geom_vline(
+    xintercept = 0,
+    color = "thistle4",
+    linetype = "dashed"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = median_pm),
+    data = dplyr::filter(pm_trend, event_seq <= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = median_pm),
+    data = dplyr::filter(pm_trend, event_seq >= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::scale_x_continuous(
+    breaks = seq(-12, 12, by = 2)
+  ) +
+  theme_minimal_light() +
+  ggplot2::labs(
+    x = "Months pre/post monitor start month",
+    y = "Median of de-seasonalized monitor median PM2.5"
+  )
+```
+
+### Log-transformed PM2.5 values
+
+#### Non de-trended log(PM2.5) values
+
+For each monitor, I've calculated the mean/median log(PM2.5) for the 12 months
+before and after monitor installment. The mean of individual monitor means is
+shown below.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+monitors <- readRDS(
+  here::here("data/logged-pm/monitor-raw-pollution.Rds")
+) |> dplyr::filter(row_id %in% all_monitors_dedup_site_buffer$row_id)
+pollution <- new_pollutionSeqCollection(
+  monitors$pollution,
+  summary_names = attr(monitors$pollution[[1]], "summary_names")
+)
+pm_trend <- dplyr::summarise(
+  dplyr::group_by(enframe(pollution), event_seq),
+  mean_pm = mean(Mean),
+  median_pm = median(Median)
+)
+
+ggplot2::ggplot(pm_trend, ggplot2::aes(x = event_seq, y = mean_pm, group = 1)) +
+  ggplot2::geom_line(color = "gray50") +
+  ggplot2::geom_point(color = "palegreen4") +
+  ggplot2::geom_vline(
+    xintercept = 0,
+    color = "thistle4",
+    linetype = "dashed"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = mean_pm),
+    data = dplyr::filter(pm_trend, event_seq <= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = mean_pm),
+    data = dplyr::filter(pm_trend, event_seq >= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::scale_x_continuous(
+    breaks = seq(-12, 12, by = 2)
+  ) +
+  theme_minimal_light() +
+  ggplot2::labs(
+    x = "Months pre/post monitor start month",
+    y = "Mean of monitor mean log(PM2.5)"
+  )
+```
+
+Similarly, the median of monitor median monthly values.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+ggplot2::ggplot(pm_trend, ggplot2::aes(x = event_seq, y = median_pm, group = 1)) +
+  ggplot2::geom_line(color = "gray50") +
+  ggplot2::geom_point(color = "palegreen4") +
+  ggplot2::geom_vline(
+    xintercept = 0,
+    color = "thistle4",
+    linetype = "dashed"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = median_pm),
+    data = dplyr::filter(pm_trend, event_seq <= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = median_pm),
+    data = dplyr::filter(pm_trend, event_seq >= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::scale_x_continuous(
+    breaks = seq(-12, 12, by = 2)
+  ) +
+  theme_minimal_light() +
+  ggplot2::labs(
+    x = "Months pre/post monitor start month",
+    y = "Median of monitor median log(PM2.5)"
+  )
+```
+
+#### log(PM2.5) values with seasonality removed (via STL)
+
+Mean of de-seasonalized monitor means, but with log-transformed PM2.5 values.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+monitors <- readRDS(
+  here::here("data/logged-pm/monitor-detrended-pollution.Rds")
+) |> dplyr::filter(row_id %in% all_monitors_dedup_site_buffer$row_id)
+pollution <- new_pollutionSeqCollection(
+  monitors$pollution,
+  summary_names = attr(monitors$pollution[[1]], "summary_names")
+)
+pm_trend <- dplyr::summarise(
+  dplyr::group_by(enframe(pollution), event_seq),
+  mean_pm = mean(Mean),
+  median_pm = median(Median)
+)
+
+ggplot2::ggplot(pm_trend, ggplot2::aes(x = event_seq, y = mean_pm, group = 1)) +
+  ggplot2::geom_line(color = "gray50") +
+  ggplot2::geom_point(color = "palegreen4") +
+  ggplot2::geom_vline(
+    xintercept = 0,
+    color = "thistle4",
+    linetype = "dashed"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = mean_pm),
+    data = dplyr::filter(pm_trend, event_seq <= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = mean_pm),
+    data = dplyr::filter(pm_trend, event_seq >= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::scale_x_continuous(
+    breaks = seq(-12, 12, by = 2)
+  ) +
+  theme_minimal_light() +
+  ggplot2::labs(
+    x = "Months pre/post monitor start month",
+    y = "Mean of de-seasonalized monitor mean log(PM2.5)"
+  )
+```
+
+And finally, median of de-seasonalized median log(PM2.5) monitor values.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-width: 10
+#| fig-height: 5
+#| fig-align: "center"
+ggplot2::ggplot(pm_trend, ggplot2::aes(x = event_seq, y = median_pm, group = 1)) +
+  ggplot2::geom_line(color = "gray50") +
+  ggplot2::geom_point(color = "palegreen4") +
+  ggplot2::geom_vline(
+    xintercept = 0,
+    color = "thistle4",
+    linetype = "dashed"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = median_pm),
+    data = dplyr::filter(pm_trend, event_seq <= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(x = event_seq, y = median_pm),
+    data = dplyr::filter(pm_trend, event_seq >= 0),
+    se = FALSE,
+    method = "lm"
+  ) +
+  ggplot2::scale_x_continuous(
+    breaks = seq(-12, 12, by = 2)
+  ) +
+  theme_minimal_light() +
+  ggplot2::labs(
+    x = "Months pre/post monitor start month",
+    y = "Median of monitor median log(PM2.5)"
+  )
+```

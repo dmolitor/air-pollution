@@ -160,13 +160,25 @@ intergen_geo <- transform(
 
 # Import pollution data ---------------------------------------------------
 
-pm_files <- list.files(
-  path = here::here("data/monthly-pm2.5/"),
-  full.names = TRUE,
-  pattern = "*2014..-2014..\\.nc"
+pm_files <- c(
+  list.files(
+    path = here::here("data/monthly-pm2.5/"),
+    full.names = TRUE,
+    pattern = "*201[4-9]..-201[4-9]..\\.nc"
+  ),
+  list.files(
+    path = here::here("data/monthly-pm2.5/"),
+    full.names = TRUE,
+    pattern = "*202[01]..-202[01]..\\.nc"
+  )
 )
 pm <- suppressWarnings({ terra::rast(pm_files) })
-names(pm) <- paste0(month_extract(1:12), ".2014")
+names(pm) <- unlist(
+  lapply(
+    paste0(".", 2014:2021),
+    \(.x) paste0(month_extract(1:12), .x)
+  )
+)
 intergen_geo <- sf::st_transform(intergen_geo, terra::crs(pm))
 pm_agg <- terra::app(pm, fun = mean, na.rm = TRUE)
 
@@ -179,7 +191,7 @@ intergen_geo <- intergen_geo |> dplyr::bind_cols(pm_geo)
 
 # Calculate bi-variate color scheme ---------------------------------------
 
-# Calculate 1/3 quantiles for both pollution and mobility
+# Calculate quartiles for both pollution and mobility
 absolute_quantiles <- quantile(
   intergen_geo$am_80_82_cohort,
   seq(0, 1, length.out = 5),
@@ -241,7 +253,7 @@ annotations <- tibble::tibble(
   ),
   arrow_to = c(
     sf::st_point(c(-773621.7105942855, -966757.3634888892)), # missing
-    sf::st_point(c(-1853752.729149, 569765.307212)),         # grey
+    sf::st_point(c(-1704710.351408, 724982.823279)),         # grey
     sf::st_point(c(285433.188871, 296294.929811)),           # blue
     sf::st_point(c(834057.690579, -1107570.192692)),         # violet
     sf::st_point(c(2126052.810388, 851241.131343))           # red
@@ -332,7 +344,7 @@ pollution_inequality_map <- ggplot2::ggplot(
   ) +
   ggplot2::scale_fill_identity() +
   ggplot2::labs(
-    title = "The Geography of Upward Mobility and Air Pollution in the United States",
+    title = "The Geography of Economic Mobility and Air Pollution in the United States",
     subtitle = "Average economic mobility and annual PM2.5 (\U03BCg/m\U00B3) in U.S. commuting zones"
   ) +
   ggplot2::theme(
@@ -395,12 +407,12 @@ mobility_plot <- ggplot2::ggplot(
     mapping = ggplot2::aes(fill = absolute_upward_mobility)
   ) +
   ggplot2::geom_sf() +
-  # ggpattern::geom_sf_pattern(
-  #   ggplot2::aes(pattern = pattern),
-  #   pattern_size = 0.4,
-  #   pattern_density = 0.7,
-  #   pattern_spacing = 0.01
-  # ) +
+  ggpattern::geom_sf_pattern(
+    ggplot2::aes(pattern = pattern),
+    pattern_size = 0.4,
+    pattern_density = 0.7,
+    pattern_spacing = 0.01
+  ) +
   ggplot2::geom_sf(
     data = state_lines,
     color = "white",
