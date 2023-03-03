@@ -17,8 +17,7 @@ css: styles.css
 
 A full replication package, including all code and data, for
 the visualization reported here is available
-at
-[https://github.com/dmolitor/air-pollution](https://github.com/dmolitor/air-pollution).
+[on Github](https://github.com/dmolitor/air-pollution).
 
 ## Data Sources
 
@@ -34,8 +33,8 @@ Estimates of intergenerational mobility are generated at the
 (CZ) level. Estimates are reported only for CZs with more than 250 children
 in the relevant samples. This is the reason that a small number (29)
 of CZs in [Figure 1](index.qmd#fig-1) are missing data.
-Relative mobility (RM) is the slope from OLS regression of child
-rank on parent rank within each CZ. Relative mobility can be multiplied 
+Relative mobility (RM) is the slope from OLS regression of child income
+rank on parent income rank within each CZ. Relative mobility can be multiplied 
 by the difference in parent ranks (on a 0-100 scale) to obtain the expected
 difference in child's rank (on a 0-100 scale). Absolute upward mobility 
 (which is the measure of economic mobility utilized in my visualization) 
