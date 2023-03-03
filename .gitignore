@@ -53,7 +53,6 @@ rsconnect/
 
 # Renv stuff
 renv/
-renv.lock
 .Rprofile
 /.quarto/
 
