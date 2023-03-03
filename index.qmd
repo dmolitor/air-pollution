@@ -96,8 +96,6 @@ quiet <- function(x) {
 
 # Import inter-gen mobility data and re-structure data --------------------
 
-quiet({ ncdf4::nc_version() })
-
 # County-level mobility data
 
 intergen_mobility_county <- readxl::read_excel(
