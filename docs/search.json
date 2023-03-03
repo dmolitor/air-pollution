@@ -1,0 +1,51 @@
+[
+  {
+    "objectID": "index.html#abstract",
+    "href": "index.html#abstract",
+    "title": "The Geography of Economic Mobility and Air Pollution",
+    "section": "Abstract",
+    "text": "Abstract\nIntergenerational economic mobility varies widely within the U.S. Understanding the characteristics of places with high vs. low economic mobility has been the focus of a substantial body of recent research. In this visualization, I explore an additional correlate of economic mobility; ambient air pollution. Exposure to ambient air pollution has been shown to have negative long-term physical, cognitive, and economic impacts, with particularly acute effects on children. Using comprehensive satellite measures of air pollution over time, I show a striking geographic correlation between areas with relatively high levels of air pollution and relatively low levels of intergenerational economic mobility. This visualization provides supporting evidence that air pollution may play a role in maintaining the cycle of low economic mobility throughout many areas of the U.S. due to its myriad harmful effects.\n\nKeywords\neconomic mobility, air pollution, inequality"
+  },
+  {
+    "objectID": "index.html#description",
+    "href": "index.html#description",
+    "title": "The Geography of Economic Mobility and Air Pollution",
+    "section": "Description",
+    "text": "Description\nIntergenerational economic mobility within the U.S. is highly heterogeneous, with large differences in mobility between geographic regions, e.g. much of mid-west and south-east (Chetty et al. 2014). There are many distinguishing characteristics of places with high vs. low economic mobility, a number of which have been studied at length. One potential characteristic that has escaped significant focus is ambient air pollution. The harmful effects of ambient air pollution on long-term physical, cognitive, and economic outcomes have been widely studied, and have been shown to be particularly detrimental to children. Currie et al. (2011) show that air pollution from traffic congestion leads to increased risk of health complications, including low birth weight, among newborns which, in turn, has been shown to have significantly negative effects on future outcomes. Wodtke et al. (2022) show that exposure to ambient air pollution leads to decreased cognitive ability in children, lower educational achievement, and worse future economic outcomes. Additionally, Borgschulte et al.  (2022) show that ambient air pollution leads to significant declines in labor market outcomes and productivity. These findings provide a strong basis to suspect that air pollution may serve as a mechanism for lower intergenerational economic mobility. To descriptively examine this potential mechanism, I map the relationship between ambient air pollution (fine particulate matter) and intergenerational economic mobility across the contiguous United States.\nUsing administrative census and tax records, Chetty et al. (2014) estimate economic mobility as a child’s expected income percentile in the national income distribution at age 30 if they were born to a family in the 25th percentile of the national income distribution. I then pair these measures of economic mobility with comprehensive measures of mean monthly particulate matter (PM 2.5) in µg/m³ across the contiguous U.S. (Donkelaar et al. 2021). All measures of economic mobility and air pollution are measured or aggregated at the commuting zone geographic level. Figure 1 displays economic mobility and mean air pollution quartiles (dividing economic mobility and air pollution measures into 4 even bins) for each commuting zone across the contiguous U.S.\n\n\n\n\n\nFigure 1: Economic Mobility and Air Pollution\n\n\n\n\nThe correlation between below-median air pollution quality and below-median economic mobility is striking, with large swatches of the southwest and midwest falling in both the quartile of the worst air pollution and the quartile of the worst economic mobility. Although there are some areas of the U.S. that fall into one extreme but not the other (e.g. bad air pollution but good economic mobility), these areas are the exception and not the rule. To quantify the strength of this correlation I estimate an OLS of the form \\(y_i=\\beta_1 + \\beta_2x_i + \\epsilon_i\\) where \\(i\\) is the commuting zone, \\(x\\) is the mean annual PM 2.5 (in µg/m³), and \\(y\\) is the mean economic mobility (in income percentile ranks). The resulting coefficient of interest is \\(\\beta_2=\\)-1.885 (p < 0.001), which can be interpreted as follows: on average, a one-µg/m³ increase in a commuting zone’s PM 2.5 pollution levels corresponds with a -1.885 decrease in economic mobility.\nThis figure brings to attention the striking relationship between ambient air pollution levels and economic mobility. It also provides supporting evidence for air pollution playing a role in the perpetuation of low economic mobility. Additionally, it motivates a deeper examination of air pollution as a potentially causal mechanism for economic mobility. Finally, it exemplifies the usage of cutting-edge, satellite-based measures of air pollution for gaining a comprehensive understanding of the relationship between air pollution and social systems."
+  },
+  {
+    "objectID": "index.html#supplemental-material",
+    "href": "index.html#supplemental-material",
+    "title": "The Geography of Economic Mobility and Air Pollution",
+    "section": "Supplemental Material",
+    "text": "Supplemental Material\nBackground materials on data and methods are available here."
+  },
+  {
+    "objectID": "supplemental.html",
+    "href": "supplemental.html",
+    "title": "Supplemental Material",
+    "section": "",
+    "text": "Back to main article"
+  },
+  {
+    "objectID": "supplemental.html#data-sources",
+    "href": "supplemental.html#data-sources",
+    "title": "Supplemental Material",
+    "section": "Data Sources",
+    "text": "Data Sources\n\nIntergenerational Economic Mobility\nI use intergenerational economic mobility measures as prepared and described in Chetty et. al (2014). A full replication package containing data and code for this study is available through the Harvard Dataverse here.\nEstimates of intergenerational mobility are generated at the commuting zone (CZ) level. Estimates are reported only for CZs with more than 250 children in the relevant samples. This is the reason that a small number (29) of CZs in Figure 1 are missing data. Relative mobility (RM) is the slope from OLS regression of child rank on parent rank within each CZ. Relative mobility can be multiplied by the difference in parent ranks (on a 0-100 scale) to obtain the expected difference in child’s rank (on a 0-100 scale). Absolute upward mobility (which is the measure of economic mobility utilized in my visualization) is the expected rank of children whose parents are at the 25th percentile of the national income distribution.\n\n\nEstimates of Surface PM 2.5\nI use monthly measures of North American, ground-level, fine particulate matter (PM 2.5) for 2010-2021, as estimated by van Donkelaar et. al (2021). These estimates are generated through a process that utilizes geographically weighted regression to calibrate satellite measures of PM 2.5 with ground-based observations. A more detailed description can be found here. The resulting measures of PM 2.5 are high resolution raster files (0.01° x 0.01°) covering most of North America, but not including Alaska or Hawaii."
+  },
+  {
+    "objectID": "supplemental.html#data-preparation",
+    "href": "supplemental.html#data-preparation",
+    "title": "Supplemental Material",
+    "section": "Data Preparation",
+    "text": "Data Preparation\n\nIntergenerational Economic Mobility\nThe measures of economic mobility do not require any further preparation beyond their original format, as described above.\n\n\nEstimates of Surface PM 2.5\nThe first step in aggregating the monthly estimates of ground-level PM 2.5 is to summarize each 0.01° x 0.01° grid as its average monthly PM 2.5 value across the full time period. The resulting file is a high-resolution (0.01° x 0.01°) raster file of average monthly PM 2.5 levels from 2010-2021 across North America. Finally, I roll up these high-resolution measures to the CZ level, resulting in average monthly PM 2.5 levels from 2010-2021 at the CZ level across the contiguous U.S."
+  },
+  {
+    "objectID": "supplemental.html#figure-1",
+    "href": "supplemental.html#figure-1",
+    "title": "Supplemental Material",
+    "section": "Figure 1",
+    "text": "Figure 1\nI calculate the quartiles of both the economic mobility measure as well as PM 2.5 levels (dividing economic mobility measure and PM 2.5 levels into four equal bins, respectively). I then assign each CZ into one of 16 bins (four mobility bins x four pollution bins) determined by which economic mobility quartile and PM 2.5 quartile it lies within."
+  }
+]
