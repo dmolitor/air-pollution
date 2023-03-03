@@ -450,7 +450,7 @@ high levels of air pollution and relatively low levels of
 intergenerational economic mobility. This visualization 
 provides supporting evidence that air pollution may play a 
 role in maintaining the cycle of low economic mobility throughout 
-many areas of the U.S. due to its myriad harmful effects.
+many areas of the U.S. due to its many harmful effects.
 
 #### Keywords
 
@@ -460,11 +460,12 @@ economic mobility, air pollution, inequality
 
 Intergenerational economic mobility within the U.S. is highly
 heterogeneous, with large differences in mobility between 
-geographic regions, e.g. much of mid-west and south-east 
+geographic regions, e.g. much of the Midwest and Southeast 
 [@chetty_where_2014]. There are many distinguishing characteristics
 of places with high vs. low economic mobility, a number of which 
-have been studied at length. One potential characteristic that 
-has escaped significant focus is ambient air pollution. The harmful 
+have been studied at length. One such characteristic that 
+has escaped significant focus within the economic mobility
+literature is ambient air pollution. The harmful 
 effects of ambient air pollution on long-term physical, cognitive, 
 and economic outcomes have been widely studied, and have been 
 shown to be particularly detrimental to children. Currie et al.

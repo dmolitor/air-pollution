@@ -33,7 +33,7 @@ Estimates of intergenerational mobility are generated at the
 (CZ) level. Estimates are reported only for CZs with more than 250 children
 in the relevant samples. This is the reason that a small number (29)
 of CZs in [Figure 1](index.qmd#fig-1) are missing data.
-Relative mobility (RM) is the slope from OLS regression of child income
+Relative mobility (RM) is the slope from an OLS regression of child income
 rank on parent income rank within each CZ. Relative mobility can be multiplied 
 by the difference in parent ranks (on a 0-100 scale) to obtain the expected
 difference in child's rank (on a 0-100 scale). Absolute upward mobility 
