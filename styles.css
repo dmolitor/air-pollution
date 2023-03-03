@@ -1,4 +1,8 @@
 /* css styles */
 html * {
-  font-family: Trebuchet MS;
+  font-family: "PT Sans";
+}
+
+.justified-text {
+  text-align: justify;
 }

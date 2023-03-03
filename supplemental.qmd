@@ -1,0 +1,84 @@
+---
+title: "Supplemental Material"
+execute: 
+  freeze: false
+format:
+  html:
+    page-layout: full
+    self-contained: true
+bibliography: references/references.bib
+csl: references/american-sociological-association.csl
+css: styles.css
+---
+
+[Back to main article](index.qmd)
+
+::: {.justified-text}
+
+A full replication package, including all code and data, for
+the visualization reported here is available
+at
+[https://github.com/dmolitor/air-pollution](https://github.com/dmolitor/air-pollution).
+
+## Data Sources
+
+#### Intergenerational Economic Mobility
+
+I use intergenerational economic mobility measures as prepared and 
+described in Chetty et. al [-@chetty_where_2014]. A full replication
+package containing data and code for this study is available through
+the Harvard Dataverse [here](https://doi.org/10.7910/DVN/NALG3E).
+
+Estimates of intergenerational mobility are generated at the
+[commuting zone](https://www.ers.usda.gov/data-products/commuting-zones-and-labor-market-areas/)
+(CZ) level. Estimates are reported only for CZs with more than 250 children
+in the relevant samples. This is the reason that a small number (29)
+of CZ's in [Figure 1](index.qmd#fig-1) are missing data.
+Relative mobility (RM) is the slope from OLS regression of child
+rank on parent rank within each CZ. Relative mobility can be multiplied 
+by the difference in parent ranks (on a 0-100 scale) to obtain the expected
+difference in child's rank (on a 0-100 scale). Absolute upward mobility 
+(which is the measure of economic mobility utilized in my visualization) 
+is the expected rank of children whose parents are at the 25th percentile of
+the national income distribution.
+
+#### Estimates of Surface PM 2.5
+
+I use monthly measures of North American, ground-level, fine 
+particulate matter (PM 2.5) for 2010-2021, as estimated by 
+van Donkelaar et. al [-@van_donkelaar_monthly_2021]. These estimates
+are generated through a process that utilizes geographically weighted
+regression to calibrate satellite measures of PM 2.5 with ground-based
+observations. A more detailed description can be found 
+[here](https://sites.wustl.edu/acag/datasets/surface-pm2-5/).
+The resulting measures of PM 2.5 are high resolution raster
+files (0.01° x 0.01°) covering most of North America, but not
+including Alaska or Hawaii.
+
+## Data Preparation
+
+#### Intergenerational Economic Mobility
+
+The measures of economic mobility do not require any further preparation
+beyond their original format, as described above.
+
+#### Estimates of Surface PM 2.5
+
+The first step in aggregating the monthly estimates of ground-level PM 2.5
+is to summarize each 0.01° x 0.01° grid as its average monthly 
+PM 2.5 value across the full time period. The resulting file is a 
+high-resolution (0.01° x 0.01°) raster file of average monthly PM 2.5
+levels from 2010-2021 across North America. Finally, I roll up these
+high-resolution measures to the CZ level, resulting in average monthly PM 2.5
+levels from 2010-2021 at the CZ level across the contiguous U.S.
+
+
+## Figure 1
+
+I calculate the quartiles of both the economic mobility measure as well
+as PM 2.5 levels (dividing economic mobility measure and PM 2.5
+levels into four equal bins, respectively). I then assign each CZ into one of
+16 bins (four mobility bins x four pollution bins) determined by which 
+economic mobility quartile and PM 2.5 quartile it lies within.
+
+:::

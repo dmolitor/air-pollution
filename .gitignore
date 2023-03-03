@@ -55,3 +55,8 @@ rsconnect/
 renv/
 renv.lock
 .Rprofile
+/.quarto/
+
+# Quarto stuff
+_freeze/
+_site/

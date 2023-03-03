@@ -1,4 +1,99 @@
-source(here::here("src/utils.R"))
+---
+title: "The Geography of Economic Mobility and Air Pollution"
+author: "Daniel Molitor"
+execute: 
+  freeze: false
+format:
+  html:
+    page-layout: full
+    self-contained: true
+bibliography: references/references.bib
+csl: references/american-sociological-association.csl
+css: styles.css
+---
+
+```{r}
+#| echo: false
+#| eval: false
+#| message: false
+#| warning: false
+#| label: Create map
+
+# Functions ---------------------------------------------------------------
+
+# Extract the month from a date, as a string
+month_extract <- function(x, ...) {
+  as.character(
+    lubridate::month(
+      x = x,
+      label = TRUE,
+      abbr = FALSE,
+      ...
+    )
+  )
+}
+
+# List of contiguous 48 states/District of Columbia
+states <- function() {
+  c(
+    "Alabama",
+    "Arizona",
+    "Arkansas",
+    "California",
+    "Colorado",
+    "Connecticut",
+    "Delaware",
+    "District Of Columbia",
+    "Florida",
+    "Georgia",
+    "Idaho",
+    "Illinois",
+    "Indiana",
+    "Iowa",
+    "Kansas",
+    "Kentucky",
+    "Louisiana",
+    "Maine",
+    "Maryland",
+    "Massachusetts",
+    "Michigan",
+    "Minnesota",
+    "Mississippi",
+    "Missouri",
+    "Montana",
+    "Nebraska",
+    "Nevada",
+    "New Hampshire",
+    "New Jersey",
+    "New Mexico",
+    "New York",
+    "North Carolina",
+    "North Dakota",
+    "Ohio",
+    "Oklahoma",
+    "Oregon",
+    "Pennsylvania",
+    "Rhode Island",
+    "South Carolina",
+    "South Dakota",
+    "Tennessee",
+    "Texas",
+    "Utah",
+    "Vermont",
+    "Virginia",
+    "Washington",
+    "West Virginia",
+    "Wisconsin",
+    "Wyoming"
+  )
+}
+
+# Suppress all output from a function
+quiet <- function(x) { 
+  sink(tempfile()) 
+  on.exit(sink()) 
+  invisible(force(x)) 
+}
 
 # Import inter-gen mobility data and re-structure data --------------------
 
@@ -18,7 +113,9 @@ intergen_mobility_county[, c(1, 6, 14:25)] <- lapply(
   as.integer
 )
 intergen_mobility_county$county_fips_code <- formatC(
-  intergen_mobility_county$county_fips_code, width = 5, flag = "0"
+  intergen_mobility_county$county_fips_code,
+  width = 5,
+  flag = "0"
 )
 
 # Commuting-zone level mobility data
@@ -37,19 +134,6 @@ intergen_mobility_cz[, 4:ncol(intergen_mobility_cz)] <- lapply(
   as.numeric
 )
 
-# Get county-level population estimates -----------------------------------
-
-county_pop <- suppressWarnings({
-  tidycensus::get_estimates(
-    geography = "county",
-    product = "population",
-    progress_bar = FALSE
-  ) |>
-  dplyr::filter(variable == "POP") |>
-  dplyr::select(-variable, -NAME) |>
-  dplyr::rename("population" = "value")
-})
-
 # Import and re-structure county shape files ------------------------------
 
 state_list <- tolower(states())
@@ -64,13 +148,9 @@ county_lines <- tigris::counties(
   progress_bar = FALSE
 )
 
-# Join population to county lines
-county_lines <- county_lines |>
-  dplyr::left_join(county_pop, by = "GEOID")
-
 # Clean county lines data
 names(county_lines) <- tolower(gsub(" |-", "_", names(county_lines)))
-county_lines <- transform(
+county_lines <- dplyr::mutate(
   county_lines,
   county_fips_code = paste0(statefp, countyfp)
 )
@@ -80,11 +160,7 @@ cz_vars <- c("county_fips_code", "commuting_zone_id", "commuting_zone_name")
 cz_xwalk <- intergen_mobility_county[, cz_vars]
 cz <- merge(county_lines, cz_xwalk, by = "county_fips_code")
 cz <- dplyr::group_by(cz, commuting_zone_id) |> 
-  dplyr::summarise(
-    geometry = sf::st_union(geometry),
-    population = sum(population, na.rm = TRUE),
-    .groups = "drop"
-  )
+  dplyr::summarise(geometry = sf::st_union(geometry), .groups = "drop")
 
 # Retrieve state boundary lines
 state_lines <- tigris::states(
@@ -93,7 +169,7 @@ state_lines <- tigris::states(
   year = 2015,
   progress_bar = FALSE
 ) |>
-  subset(tolower(NAME) %in% tolower(states()))
+  subset(tolower(NAME) %in% state_list)
 
 # Merge mobility data with geography files --------------------------------
 
@@ -103,68 +179,13 @@ intergen_geo <- cz |>
     by = c("commuting_zone_id" = "cz")
   )
 
-# Create cut points to discretify continuous outcome
-am_cut <- as.character(
-  cut(
-    intergen_geo$am_80_82_cohort,
-    breaks = c(26, 37.3, 39.2, 40.8, 42, 43.3, 44.6, 45.9, 48.5, 52, 65),
-    include.lowest = TRUE
-  )
-)
-am_cut <- factor(
-  x = am_cut,
-  levels = rev(
-    c(
-      NA,
-      "[26,37.3]",
-      "(37.3,39.2]",
-      "(39.2,40.8]",
-      "(40.8,42]",
-      "(42,43.3]",
-      "(43.3,44.6]",
-      "(44.6,45.9]",
-      "(45.9,48.5]",
-      "(48.5,52]",
-      "(52,65]"
-    )
-  ),
-  exclude = NULL,
-  labels = rev(
-    c(
-      "Insufficient Data",
-      "26.0 - 37.3",
-      "37.3 - 39.2",
-      "39.2 - 40.8",
-      "40.8 - 42.0",
-      "42.0 - 43.3",
-      "43.3 - 44.6",
-      "44.6 - 45.9",
-      "45.9 - 48.5",
-      "48.5 - 52.0",
-      "52.0 - 65.0"
-    )
-  )
-)
-
-# Replace continuous outcome with nicely labelled discrete outcome
-
-intergen_geo <- transform(
-  intergen_geo,
-  absolute_upward_mobility = am_cut,
-  pattern = ifelse(
-    as.character(am_cut) == "Insufficient Data", 
-    "crosshatch", 
-    "none"
-  )
-)
-
 # Import pollution data ---------------------------------------------------
 
 pm_files <- c(
   list.files(
     path = here::here("data/monthly-pm2.5/"),
     full.names = TRUE,
-    pattern = "*201[4-9]..-201[4-9]..\\.nc"
+    pattern = "*201[0-9]..-201[0-9]..\\.nc"
   ),
   list.files(
     path = here::here("data/monthly-pm2.5/"),
@@ -175,12 +196,12 @@ pm_files <- c(
 pm <- suppressWarnings({ terra::rast(pm_files) })
 names(pm) <- unlist(
   lapply(
-    paste0(".", 2014:2021),
+    paste0(".", 2010:2021),
     \(.x) paste0(month_extract(1:12), .x)
   )
 )
 intergen_geo <- sf::st_transform(intergen_geo, terra::crs(pm))
-pm_agg <- terra::app(pm, fun = mean, na.rm = TRUE)
+pm_agg <- quiet({ terra::app(pm, fun = mean, na.rm = TRUE) })
 
 # Extract pollution and aggregate at commuting zone level
 pm_geo <- terra::extract(pm_agg, intergen_geo, fun = mean, na.rm = TRUE) |>
@@ -212,7 +233,16 @@ bivariate_color_scale <- dplyr::bind_rows(
   tibble::tibble("group" = "Insufficient Data", "fill" = "white")
 )
 
-# Create quantiles in data
+# Create cross-hatching pattern for missing data
+intergen_geo <- dplyr::mutate(
+    intergen_geo,
+    pattern = dplyr::case_when(
+      is.na(am_80_82_cohort) ~ "crosshatch",
+      TRUE ~ "none"
+    )
+)
+
+# Create quartile cut-points in the data
 intergen_geo <- intergen_geo |>
   dplyr::mutate(
     absolute_mobility = cut(
@@ -235,7 +265,8 @@ intergen_geo <- intergen_geo |>
 
 # Pollution x Inequality map ----------------------------------------------
 
-# Create Annotations
+# Create annotations
+
 annotations <- tibble::tibble(
   label = c(
     "Hatching indicates\ninsufficient data",
@@ -292,8 +323,10 @@ annotations <- sf::st_coordinates(annotations$arrow_from) |>
   )
 
 # Create legend
+
 font_fam <- "Trebuchet MS"
-bivariate_color_scale <- bivariate_color_scale[-nrow(bivariate_color_scale), ] |>
+bivariate_color_scale <- bivariate_color_scale |>
+  subset(group != "Insufficient Data") |>
   tidyr::separate(group, into = c("mobility", "pollution"), sep = "-") |>
   dplyr::mutate(
     mobility = as.integer(mobility),
@@ -324,7 +357,8 @@ legend <- ggplot2::ggplot() +
   ) +
   ggplot2::coord_fixed()
 
-# Create actual map
+# Create map
+
 pollution_inequality_map <- ggplot2::ggplot(
   data = sf::st_transform(intergen_geo, "ESRI:102008"),
   mapping = ggplot2::aes(fill = fill)
@@ -344,8 +378,14 @@ pollution_inequality_map <- ggplot2::ggplot(
   ) +
   ggplot2::scale_fill_identity() +
   ggplot2::labs(
-    title = "The Geography of Economic Mobility and Air Pollution in the United States",
-    subtitle = "Average economic mobility and annual PM2.5 (\U03BCg/m\U00B3) in U.S. commuting zones"
+    title = paste(
+      "The Geography of Economic Mobility and",
+      "Air Pollution in the United States"
+    ),
+    subtitle = paste(
+      "Average economic mobility and annual PM2.5",
+      "(\U03BCg/m\U00B3) in U.S. commuting zones"
+    )
   ) +
   ggplot2::theme(
     axis.text = ggplot2::element_blank(),
@@ -387,104 +427,119 @@ for (row in 1:nrow(annotations)) {
 pollution_inequality_map <- pollution_inequality_map +
   ggplot2::theme(axis.title = ggplot2::element_blank())
 
-# Combine the two
+# Combine the legend and the map
 intergen_mobility_and_pollution <- cowplot::ggdraw() +
   cowplot::draw_plot(pollution_inequality_map, 0, 0, 1, 1) +
   cowplot::draw_plot(legend, .05, .075, .2, .2)
+```
 
-# Save the plot
-ggplot2::ggsave(
-  here::here("intergen-mobility-and-pollution.png"),
-  plot = intergen_mobility_and_pollution,
-  width = 14,
-  height = 10
-)
+::: {.justified-text}
 
-# Opportunity Insights replica map ----------------------------------------
+## Abstract
 
-mobility_plot <- ggplot2::ggplot(
-    data = sf::st_transform(intergen_geo, "ESRI:102008"),
-    mapping = ggplot2::aes(fill = absolute_upward_mobility)
-  ) +
-  ggplot2::geom_sf() +
-  ggpattern::geom_sf_pattern(
-    ggplot2::aes(pattern = pattern),
-    pattern_size = 0.4,
-    pattern_density = 0.7,
-    pattern_spacing = 0.01
-  ) +
-  ggplot2::geom_sf(
-    data = state_lines,
-    color = "white",
-    alpha = 0,
-    inherit.aes = FALSE
-  ) +
-  ggplot2::scale_fill_manual(
-    values = c(
-      "52.0 - 65.0" = "#FCCE25FF",
-      "48.5 - 52.0" = "#FCA636FF",
-      "45.9 - 48.5" = "#F1844BFF",
-      "44.6 - 45.9" = "#E16462FF",
-      "43.3 - 44.6" = "#E16462FF",
-      "42.0 - 43.3" = "#CC4678FF",
-      "40.8 - 42.0" = "#B12A90FF",
-      "39.2 - 40.8" = "#900DA4FF",
-      "37.3 - 39.2" = "#6A00A8FF",
-      "26.0 - 37.3" = "#42049EFF",
-      "Insufficient Data" = "white"
-    )
-  ) +
-  ggplot2::labs(
-    title = "The Geography of Upward Mobility in the United States",
-    subtitle = "Mean Child Percentile Rank for Parents at 25\U1D57\U02B0 National Income Percentile",
-    caption = "Note: Lighter Color = More Absolute Upward Mobility"
-  ) +
-  ggplot2::theme(
-    axis.text = ggplot2::element_blank(),
-    axis.ticks = ggplot2::element_blank(),
-    panel.background = ggplot2::element_rect(fill = "white", color = "white"),
-    panel.grid = ggplot2::element_blank(),
-    plot.caption = ggplot2::element_text(face = "italic", hjust = 0, size = 12),
-    plot.title = ggplot2::element_text(face = "bold", hjust = 0.65),
-    plot.subtitle = ggplot2::element_text(hjust = 0.65),
-    legend.title = ggplot2::element_blank()
-  ) +
-  ggplot2::guides(
-    fill = ggplot2::guide_legend(
-      override.aes = list(pattern = c(rep("none", 10), "crosshatch"))
-    )
-  )
+Intergenerational economic mobility varies widely within the U.S. 
+Understanding the characteristics of places with high vs. low 
+economic mobility has been the focus of a substantial body of 
+recent research. In this visualization, I explore an additional
+correlate of economic mobility; ambient air pollution. Exposure 
+to ambient air pollution has been shown to have negative
+long-term physical, cognitive, and economic impacts, with 
+particularly acute effects on children. Using comprehensive 
+satellite measures of air pollution over time, I show a 
+striking geographic correlation between areas with relatively
+high levels of air pollution and relatively low levels of 
+intergenerational economic mobility. This visualization 
+provides supporting evidence that air pollution may play a 
+role in maintaining the cycle of low economic mobility throughout 
+many areas of the U.S. due to its myriad harmful effects.
 
-ggplot2::ggsave(
-  here::here("intergen-mobility.png"),
-  plot = mobility_plot,
-  width = 12,
-  height = 8
-)
+#### Keywords
 
-# Pollution x Mobility scatterplot ----------------------------------------
+economic mobility, air pollution, inequality
 
-pollution_by_mobility <- ggplot2::ggplot(
-    dplyr::filter(intergen_geo, !is.na(am_80_82_cohort)),
-    ggplot2::aes(y = am_80_82_cohort, x = mean_pm)
-  ) +
-  ggplot2::geom_smooth(method = "lm", se = FALSE, color = "#4279b0") +
-  ggplot2::geom_point(
-    mapping = ggplot2::aes(size = population),
-    alpha = 0.2
-  ) +
-  ggplot2::labs(
-    x = "PM2.5 (\U03BCg/m\U00B3)",
-    y = "Mean child percentile rank",
-    title = "Air Pollution and Economic Mobility in the U.S.",
-    caption = "Note: Child income percentile rank based on parents at 25th percentile"
-  ) +
-  ggplot2::theme(
-    text = ggplot2::element_text(family = font_fam),
-    panel.background = ggplot2::element_rect(fill = "white", color = "white"),
-    panel.grid = ggplot2::element_line(color = "gray93"),
-    plot.caption = ggplot2::element_text(face = "italic", hjust = 0, size = 10),
-    plot.title = ggplot2::element_text(face = "bold", hjust = 0.5),
-    plot.subtitle = ggplot2::element_text(hjust = 0.5),
-    legend.position = "none"
-  )
+--------------------------------------------------------------------------------
+
+## Description
+
+Intergenerational economic mobility within the U.S. is highly
+heterogeneous, with large differences in mobility between 
+geographic regions, e.g. much of mid-west and south-east 
+[@chetty_where_2014]. There are many distinguishing characteristics
+of places with high vs. low economic mobility, a number of which 
+have been studied at length. One potential characteristic that 
+has escaped significant focus is ambient air pollution. The harmful 
+effects of ambient air pollution on long-term physical, cognitive, 
+and economic outcomes have been widely studied, and have been 
+shown to be particularly detrimental to children. Currie et al.
+[-@currie_traffic_2011] show that air pollution from traffic 
+congestion leads to increased risk of health complications, 
+including low birth weight, among newborns which, in turn, has 
+been shown to have significantly negative effects on future 
+outcomes. Wodtke et al. [-@wodtke_concentrated_2022] show that 
+exposure to ambient air pollution leads to decreased cognitive 
+ability in children, lower educational achievement, and worse 
+future economic outcomes. Additionally, Borgschulte et al. 
+[-@borgschulte_air_2022] show that ambient air pollution leads 
+to significant declines in labor market outcomes and productivity. 
+These findings provide a strong basis to suspect that air pollution 
+may serve as a mechanism for lower intergenerational economic mobility. 
+To descriptively examine this potential mechanism, I map the 
+relationship between ambient air pollution (fine particulate matter) 
+and intergenerational economic mobility across the contiguous 
+United States.
+
+Using administrative census and tax records, Chetty et al.
+[-@chetty_where_2014] estimate economic mobility as a child's expected income
+percentile in the national income distribution at age 30 if they were
+born to a family in the 25th percentile of the national income distribution.
+I then pair these measures of economic mobility with comprehensive 
+measures of mean annual particulate matter (PM 2.5) in µg/m³ across the
+contiguous U.S. [@van_donkelaar_monthly_2021]. All measures of economic
+mobility and air pollution are measured or aggregated at the
+[commuting zone](https://www.ers.usda.gov/data-products/commuting-zones-and-labor-market-areas/)
+geographic level. @fig-1 displays economic mobility and mean air pollution
+quartiles (dividing economic mobility and air pollution measures into 4 even
+bins) for each commuting zone across the contiguous U.S.
+
+```{r}
+#| echo: false
+#| eval: false
+#| warning: false
+#| message: false
+#| fig-width: 16
+#| fig-height: 10
+#| fig-align: "center"
+#| fig-cap: Economic Mobility and Air Pollution
+#| label: fig-1
+intergen_mobility_and_pollution
+```
+
+The correlation between below-median air pollution quality and below-median
+economic mobility is striking, with large swatches of the southwest and midwest
+falling in both the quartile of the worst air pollution and the quartile of
+the worst economic mobility. Although there are some areas of the U.S. that fall
+into one extreme but not the other (e.g. bad air pollution but good economic
+mobility), these areas are the exception and not the rule. To quantify the
+strength of this correlation I estimate an OLS of the form
+$y_i=\beta_1 + \beta_2x_i + \epsilon_i$ where $i$ is the commuting zone, $x$ is
+the mean annual PM 2.5 (in µg/m³), and $y$ is the mean economic mobility (in
+income percentile ranks). The resulting coefficient of interest is
+$\beta_2=$-1.885 (p < 0.001), which can be interpreted as follows: on average,
+a one-µg/m³ increase in a commuting zone's PM 2.5 pollution levels corresponds
+with a -1.885 decrease in economic mobility.
+
+This figure brings to attention the striking relationship between 
+ambient air pollution levels and economic mobility. It also provides 
+supporting evidence for air pollution playing a role in the perpetuation 
+of low economic mobility. Additionally, it motivates a deeper examination 
+of air pollution as a potentially causal mechanism for economic mobility. 
+Finally, it exemplifies the usage of cutting-edge, satellite-based 
+measures of air pollution for gaining a comprehensive understanding 
+of the relationship between air pollution and social systems.
+
+## Supplemental Material
+
+Background materials on data and methods are available
+[here](supplemental.qmd).
+
+:::

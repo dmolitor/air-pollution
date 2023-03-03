@@ -1,0 +1,13 @@
+project:
+  type: website
+
+website:
+  search: false
+  site-url: https://dmolitor.com/air-pollution
+  repo-url: https://github.com/dmolitor/air-pollution
+
+format:
+  html:
+    css: styles.css
+    toc: false
+    page-layout: full
