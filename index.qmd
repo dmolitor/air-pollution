@@ -14,7 +14,6 @@ css: styles.css
 
 ```{r}
 #| echo: false
-#| eval: false
 #| message: false
 #| warning: false
 #| label: Create map
@@ -457,8 +456,6 @@ many areas of the U.S. due to its myriad harmful effects.
 
 economic mobility, air pollution, inequality
 
---------------------------------------------------------------------------------
-
 ## Description
 
 Intergenerational economic mobility within the U.S. is highly
@@ -503,7 +500,6 @@ bins) for each commuting zone across the contiguous U.S.
 
 ```{r}
 #| echo: false
-#| eval: false
 #| warning: false
 #| message: false
 #| fig-width: 16
