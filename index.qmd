@@ -2,7 +2,7 @@
 title: "The Geography of Economic Mobility and Air Pollution"
 author: "Daniel Molitor"
 execute: 
-  freeze: false
+  freeze: true
 format:
   html:
     page-layout: full

@@ -56,6 +56,3 @@ renv/
 .Rprofile
 /.quarto/
 
-# Quarto stuff
-_freeze/
-_site/
