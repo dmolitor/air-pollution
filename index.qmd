@@ -490,7 +490,7 @@ Using administrative census and tax records, Chetty et al.
 percentile in the national income distribution at age 30 if they were
 born to a family in the 25th percentile of the national income distribution.
 I then pair these measures of economic mobility with comprehensive 
-measures of mean annual particulate matter (PM 2.5) in µg/m³ across the
+measures of mean monthly particulate matter (PM 2.5) in µg/m³ across the
 contiguous U.S. [@van_donkelaar_monthly_2021]. All measures of economic
 mobility and air pollution are measured or aggregated at the
 [commuting zone](https://www.ers.usda.gov/data-products/commuting-zones-and-labor-market-areas/)
