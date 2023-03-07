@@ -1,4 +1,4 @@
-source(here::here("src/utils.R"))
+source(here::here("archive/utils.R"))
 
 # Import inter-gen mobility data and re-structure data --------------------
 
@@ -330,12 +330,12 @@ pollution_inequality_map <- ggplot2::ggplot(
   mapping = ggplot2::aes(fill = fill)
 ) +
   ggplot2::geom_sf() +
-  # ggpattern::geom_sf_pattern(
-  #   ggplot2::aes(pattern = pattern),
-  #   pattern_size = 0.4,
-  #   pattern_density = 0.7,
-  #   pattern_spacing = 0.01
-  # ) +
+  ggpattern::geom_sf_pattern(
+    ggplot2::aes(pattern = pattern),
+    pattern_size = 0.4,
+    pattern_density = 0.7,
+    pattern_spacing = 0.01
+  ) +
   ggplot2::geom_sf(
     data = sf::st_transform(state_lines, sf::st_crs(intergen_geo)),
     color = "white",
