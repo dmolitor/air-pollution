@@ -1,0 +1,22 @@
+# Github stuff
+.git/
+.gitignore
+.gitattributes
+
+# Quarto stuff
+.quarto/
+
+# R stuff
+.Rprofile
+.Rproj.user
+renv/
+renv.lock
+
+# Irrelevant code
+archive/
+docs/
+
+# NextFlow stuff
+.nextflow*
+.nextflow/
+work/
