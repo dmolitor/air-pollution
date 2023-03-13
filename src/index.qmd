@@ -1,0 +1,112 @@
+---
+title: "The Geography of Economic Mobility and Air Pollution"
+author: "Daniel Molitor"
+execute: 
+  freeze: false
+format:
+  html:
+    page-layout: full
+    self-contained: true
+bibliography: ../references/references.bib
+csl: ../references/american-sociological-association.csl
+css: styles.css
+---
+
+::: {.justified-text}
+
+## Abstract
+
+Intergenerational economic mobility varies widely within the U.S. 
+Understanding the characteristics of places with high vs. low 
+economic mobility has been the focus of a substantial body of 
+recent research. In this visualization, I explore an additional
+correlate of economic mobility; ambient air pollution. Exposure 
+to ambient air pollution has been shown to have negative
+long-term physical, cognitive, and economic impacts, with 
+particularly acute effects on children. Using comprehensive 
+satellite measures of air pollution over time, I show a 
+striking geographic correlation between areas with relatively
+high levels of air pollution and relatively low levels of 
+intergenerational economic mobility. This visualization 
+provides supporting evidence that air pollution may play a 
+role in maintaining the cycle of low economic mobility throughout 
+many areas of the U.S. due to its many harmful effects.
+
+#### Keywords
+
+economic mobility, air pollution, inequality
+
+## Description
+
+Intergenerational economic mobility within the U.S. is highly
+heterogeneous, with large differences in mobility between 
+geographic regions, e.g. much of the Midwest and Southeast 
+[@chetty_where_2014]. There are many distinguishing characteristics
+of places with high vs. low economic mobility, a number of which 
+have been studied at length. One such characteristic that 
+has escaped significant focus within the economic mobility
+literature is ambient air pollution. The harmful 
+effects of ambient air pollution on long-term physical, cognitive, 
+and economic outcomes have been widely studied, and have been 
+shown to be particularly detrimental to children. Currie et al.
+[-@currie_traffic_2011] show that air pollution from traffic 
+congestion leads to increased risk of health complications, 
+including low birth weight, among newborns which, in turn, has 
+been shown to have significantly negative effects on future 
+outcomes. Wodtke et al. [-@wodtke_concentrated_2022] show that 
+exposure to ambient air pollution leads to decreased cognitive 
+ability in children, lower educational achievement, and worse 
+future economic outcomes. Additionally, Borgschulte et al. 
+[-@borgschulte_air_2022] show that ambient air pollution leads 
+to significant declines in labor market outcomes and productivity. 
+These findings provide a strong basis to suspect that air pollution 
+may serve as a mechanism for lower intergenerational economic mobility. 
+To descriptively examine this potential mechanism, I map the 
+relationship between ambient air pollution (fine particulate matter) 
+and intergenerational economic mobility across the contiguous 
+United States.
+
+Using administrative census and tax records, Chetty et al.
+[-@chetty_where_2014] estimate economic mobility as a child's expected income
+percentile in the national income distribution at age 30 if they were
+born to a family in the 25th percentile of the national income distribution.
+I then pair these measures of economic mobility with comprehensive 
+measures of mean monthly particulate matter (PM 2.5) in µg/m³ across the
+contiguous U.S. [@van_donkelaar_monthly_2021]. All measures of economic
+mobility and air pollution are measured or aggregated at the
+[commuting zone](https://www.ers.usda.gov/data-products/commuting-zones-and-labor-market-areas/)
+geographic level. [Figure 1](index.qmd#fig-1) displays economic 
+mobility and mean air pollution
+quartiles (dividing economic mobility and air pollution measures into 4 even
+bins) for each commuting zone across the contiguous U.S.
+
+![Economic Mobility and Air Pollution](mobility-and-pollution.png){#fig-1}
+The correlation between below-median air pollution quality and below-median
+economic mobility is striking, with large swatches of the southwest and midwest
+falling in both the quartile of the worst air pollution and the quartile of
+the worst economic mobility. Although there are some areas of the U.S. that fall
+into one extreme but not the other (e.g. bad air pollution but good economic
+mobility), these areas are the exception and not the rule. To quantify the
+strength of this correlation I estimate an OLS of the form
+$y_i=\beta_1 + \beta_2x_i + \epsilon_i$ where $i$ is the commuting zone, $x$ is
+the mean annual PM 2.5 (in µg/m³), and $y$ is the mean economic mobility (in
+income percentile ranks). The resulting coefficient of interest is
+$\beta_2=$-1.885 (p < 0.001), which can be interpreted as follows: on average,
+a one-µg/m³ increase in a commuting zone's PM 2.5 pollution levels corresponds
+with a -1.885 decrease in economic mobility.
+
+This figure brings to attention the striking relationship between 
+ambient air pollution levels and economic mobility. It also provides 
+supporting evidence for air pollution playing a role in the perpetuation 
+of low economic mobility. Additionally, it motivates a deeper examination 
+of air pollution as a potentially causal mechanism for economic mobility. 
+Finally, it exemplifies the usage of cutting-edge, satellite-based 
+measures of air pollution for gaining a comprehensive understanding 
+of the relationship between air pollution and social systems.
+
+## Supplemental Material
+
+Background materials on data and methods are available
+[here](supplemental.qmd).
+
+:::

@@ -1,0 +1,8 @@
+/* css styles */
+html * {
+  font-family: "PT Sans";
+}
+
+.justified-text {
+  text-align: justify;
+}
