@@ -56,3 +56,7 @@ renv/
 # Quarto stuff
 /_site/
 /_freeze/
+
+# Nextflow stuff
+.nextflow*
+work/

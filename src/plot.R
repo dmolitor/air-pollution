@@ -1,0 +1,427 @@
+plot_path <- commandArgs(TRUE)[[1]]
+
+# Functions ---------------------------------------------------------------
+
+# Extract the month from a date, as a string
+month_extract <- function(x, ...) {
+  as.character(
+    lubridate::month(
+      x = x,
+      label = TRUE,
+      abbr = FALSE,
+      ...
+    )
+  )
+}
+
+# List of contiguous 48 states/District of Columbia
+states <- function() {
+  c(
+    "Alabama",
+    "Arizona",
+    "Arkansas",
+    "California",
+    "Colorado",
+    "Connecticut",
+    "Delaware",
+    "District Of Columbia",
+    "Florida",
+    "Georgia",
+    "Idaho",
+    "Illinois",
+    "Indiana",
+    "Iowa",
+    "Kansas",
+    "Kentucky",
+    "Louisiana",
+    "Maine",
+    "Maryland",
+    "Massachusetts",
+    "Michigan",
+    "Minnesota",
+    "Mississippi",
+    "Missouri",
+    "Montana",
+    "Nebraska",
+    "Nevada",
+    "New Hampshire",
+    "New Jersey",
+    "New Mexico",
+    "New York",
+    "North Carolina",
+    "North Dakota",
+    "Ohio",
+    "Oklahoma",
+    "Oregon",
+    "Pennsylvania",
+    "Rhode Island",
+    "South Carolina",
+    "South Dakota",
+    "Tennessee",
+    "Texas",
+    "Utah",
+    "Vermont",
+    "Virginia",
+    "Washington",
+    "West Virginia",
+    "Wisconsin",
+    "Wyoming"
+  )
+}
+
+# Import inter-gen mobility data and re-structure data --------------------
+
+# County-level mobility data
+
+intergen_mobility_county <- readxl::read_excel(
+  path = here::here("data/place-effects/inter-gen-mobility-county.xls"),
+  skip = 29,
+  sheet = "Online Data Table 3"
+)
+names(intergen_mobility_county) <- tolower(
+  gsub("%", "_perc", gsub(" |-", "_", names(intergen_mobility_county)))
+)
+intergen_mobility_county <- intergen_mobility_county[-1, ]
+intergen_mobility_county[, c(1, 6, 14:25)] <- lapply(
+  intergen_mobility_county[, c(1, 6, 14:25)],
+  as.integer
+)
+intergen_mobility_county$county_fips_code <- formatC(
+  intergen_mobility_county$county_fips_code,
+  width = 5,
+  flag = "0"
+)
+
+# Commuting-zone level mobility data
+
+intergen_mobility_cz <- readxl::read_excel(
+  path = here::here("data/place-effects/inter-gen-mobility-county.xls"),
+  skip = 49,
+  sheet = "Online Data Table 5"
+)
+names(intergen_mobility_cz) <- tolower(
+  gsub(",", "", gsub(" |-", "_", names(intergen_mobility_cz)))
+)
+intergen_mobility_cz <- intergen_mobility_cz[-(1:2), ]
+intergen_mobility_cz[, 4:ncol(intergen_mobility_cz)] <- lapply(
+  intergen_mobility_cz[, 4:ncol(intergen_mobility_cz)],
+  as.numeric
+)
+
+# Import and re-structure county shape files ------------------------------
+
+state_list <- tolower(states())
+state_fips <- unique(
+  subset(tigris::fips_codes, tolower(state_name) %in% state_list)$state_code
+)
+county_lines <- tigris::counties(
+  state = state_fips,
+  cb = TRUE,
+  resolution = "20m",
+  year = 2013,
+  progress_bar = FALSE
+)
+
+# Clean county lines data
+names(county_lines) <- tolower(gsub(" |-", "_", names(county_lines)))
+county_lines <- dplyr::mutate(
+  county_lines,
+  county_fips_code = paste0(statefp, countyfp)
+)
+
+# Convert counties to commuting zones
+cz_vars <- c("county_fips_code", "commuting_zone_id", "commuting_zone_name")
+cz_xwalk <- intergen_mobility_county[, cz_vars]
+cz <- merge(county_lines, cz_xwalk, by = "county_fips_code")
+cz <- dplyr::group_by(cz, commuting_zone_id) |> 
+  dplyr::summarise(geometry = sf::st_union(geometry), .groups = "drop")
+
+# Retrieve state boundary lines
+state_lines <- tigris::states(
+  cb = TRUE,
+  resolution = "20m",
+  year = 2015,
+  progress_bar = FALSE
+) |>
+  subset(tolower(NAME) %in% state_list)
+
+# Merge mobility data with geography files --------------------------------
+
+intergen_geo <- cz |>
+  dplyr::left_join(
+    intergen_mobility_cz[, c("cz", "cz_name", "state", "am_80_82_cohort")],
+    by = c("commuting_zone_id" = "cz")
+  )
+
+# Import pollution data ---------------------------------------------------
+
+pm_files <- c(
+  list.files(
+    path = here::here("data/monthly-pm2.5/"),
+    full.names = TRUE,
+    pattern = "*201[0-9]..-201[0-9]..\\.nc"
+  ),
+  list.files(
+    path = here::here("data/monthly-pm2.5/"),
+    full.names = TRUE,
+    pattern = "*202[01]..-202[01]..\\.nc"
+  )
+)
+pm <- suppressWarnings({ terra::rast(pm_files) })
+names(pm) <- unlist(
+  lapply(
+    paste0(".", 2010:2021),
+    \(.x) paste0(month_extract(1:12), .x)
+  )
+)
+intergen_geo <- sf::st_transform(intergen_geo, terra::crs(pm))
+
+# Aggregate PM2.5 across time
+# Typical approach: pm_agg <- terra::app(pm, fun = mean, na.rm = TRUE)
+# Approach here: Different because terra doesn't play as nice w/ Docker
+pm_agg <- c()
+for (index in 1:12) {
+  pm_agg <- c(
+    pm_agg,
+    terra::app(pm[[((index-1)*12+1):(index*12)]], fun = mean, na.rm = TRUE)
+  )
+}
+pm_agg <- terra::rast(pm_agg)
+pm_agg <- terra::app(pm_agg, fun = mean, na.rm = TRUE)
+
+# Extract pollution and aggregate at commuting zone level
+pm_geo <- terra::extract(pm_agg, intergen_geo, fun = mean, na.rm = TRUE) |>
+  setNames(c("ID", "mean_pm"))
+
+# Append aggregated PM to intergen mobility
+intergen_geo <- intergen_geo |> dplyr::bind_cols(pm_geo)
+
+# Calculate bi-variate color scheme ---------------------------------------
+
+# Calculate quartiles for both pollution and mobility
+absolute_quantiles <- quantile(
+  intergen_geo$am_80_82_cohort,
+  seq(0, 1, length.out = 5),
+  na.rm = TRUE
+)
+pm_quantiles <- quantile(
+  intergen_geo$mean_pm,
+  seq(0, 1, length.out = 5)
+)
+
+# Create color hexes
+bivariate_color_scale <- dplyr::bind_rows(
+  tibble::enframe(
+    biscale::bi_pal("DkViolet2", dim = 4, preview = FALSE),
+    name = "group",
+    value = "fill"
+  ),
+  tibble::tibble("group" = "Insufficient Data", "fill" = "white")
+)
+
+# Create cross-hatching pattern for missing data
+intergen_geo <- dplyr::mutate(
+  intergen_geo,
+  pattern = dplyr::case_when(
+    is.na(am_80_82_cohort) ~ "crosshatch",
+    TRUE ~ "none"
+  )
+)
+
+# Create quartile cut-points in the data
+intergen_geo <- intergen_geo |>
+  dplyr::mutate(
+    absolute_mobility = cut(
+      am_80_82_cohort,
+      breaks = absolute_quantiles,
+      include.lowest = TRUE
+    ),
+    absolute_mobility = forcats::fct_rev(absolute_mobility),
+    pm = cut(
+      mean_pm,
+      breaks = pm_quantiles,
+      include.lowest = TRUE
+    ),
+    group = dplyr::case_when(
+      is.na(absolute_mobility) ~ "Insufficient Data",
+      TRUE ~ paste0(as.numeric(absolute_mobility), "-", as.numeric(pm))
+    )
+  ) |>
+  dplyr::left_join(bivariate_color_scale, by = "group")
+
+# Pollution x Inequality map ----------------------------------------------
+
+# Create annotations
+
+annotations <- tibble::tibble(
+  label = c(
+    "Hatching indicates\ninsufficient data",
+    "Grey areas mean\nlow pollution and\nhigh economic mobility",
+    "Blue areas mean\nhigh pollution and\nhigh economic mobility",
+    "Violet areas mean\nhigh pollution and\nlow economic mobility",
+    "Red areas mean\nlow pollution and\nlow economic mobility"
+  ),
+  arrow_from = c(
+    sf::st_point(c(-948414.4105070068, -1275675.9337005727)), # missing
+    sf::st_point(c(-2124672.040764, 982289.615484)),          # grey
+    sf::st_point(c(1168847.190982, 652107.738870)),           # blue
+    sf::st_point(c(794191.657998, -1377692.596626)),          # violet
+    sf::st_point(c(2037928.661442, 310235.360045))            # red
+  ),
+  arrow_to = c(
+    sf::st_point(c(-773621.7105942855, -966757.3634888892)), # missing
+    sf::st_point(c(-1704710.351408, 724982.823279)),         # grey
+    sf::st_point(c(285433.188871, 296294.929811)),           # blue
+    sf::st_point(c(834057.690579, -1107570.192692)),         # violet
+    sf::st_point(c(2126052.810388, 851241.131343))           # red
+  ),
+  curvature = c(
+    -0.2, # missing
+    0.2,  # grey
+    -0.1, # blue
+    -0.2, # violet
+    0.2   # red
+  ),
+  nudge = c(
+    "0,-50000",      # missing
+    "-130000,100000", # grey
+    "50000,100000",   # blue
+    "10000,-80000",  # violet
+    "0,-80000"       # red
+  )
+)
+annotations <- tidyr::separate(
+  annotations,
+  nudge,
+  into = c("nudge_x", "nudge_y"),
+  sep = "\\,"
+)
+annotations <- sf::st_coordinates(annotations$arrow_from) |>
+  tibble::as_tibble() |>
+  setNames(c("from_x", "from_y", "ID")) |>
+  dplyr::select(-ID) |>
+  dplyr::bind_cols(
+    sf::st_coordinates(annotations$arrow_to) |>
+      tibble::as_tibble() |>
+      setNames(c("to_x", "to_y", "ID")) |>
+      dplyr::select(-ID),
+    dplyr::select(annotations, -arrow_from, -arrow_to)
+  )
+
+# Create legend
+
+font_fam <- "Trebuchet MS"
+bivariate_color_scale <- bivariate_color_scale |>
+  subset(group != "Insufficient Data") |>
+  tidyr::separate(group, into = c("mobility", "pollution"), sep = "-") |>
+  dplyr::mutate(
+    mobility = as.integer(mobility),
+    pollution = as.integer(pollution)
+  )
+legend <- ggplot2::ggplot() +
+  ggplot2::geom_tile(
+    data = bivariate_color_scale,
+    mapping = ggplot2::aes(
+      x = mobility,
+      y = pollution,
+      fill = fill
+    )
+  ) +
+  ggplot2::scale_fill_identity() +
+  ggplot2::labs(
+    x = "  Worse economic \U00BB\nmobility",
+    y = "  Worse pollution \U00BB"
+  ) +
+  ggplot2::theme(
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.title = ggplot2::element_text(size = 10),
+    plot.background = ggplot2::element_rect(fill = "#F5F5F2", color = NA),
+    panel.background = ggplot2::element_rect(fill = "#F5F5F2", color = NA),
+    panel.grid = ggplot2::element_blank(),
+    text = ggplot2::element_text(family = font_fam)
+  ) +
+  ggplot2::coord_fixed()
+
+# Create map
+
+pollution_inequality_map <- ggplot2::ggplot(
+  data = sf::st_transform(intergen_geo, "ESRI:102008"),
+  mapping = ggplot2::aes(fill = fill)
+) +
+  ggplot2::geom_sf() +
+  ggpattern::geom_sf_pattern(
+    ggplot2::aes(pattern = pattern),
+    pattern_size = 0.4,
+    pattern_density = 0.7,
+    pattern_spacing = 0.01
+  ) +
+  ggplot2::geom_sf(
+    data = sf::st_transform(state_lines, sf::st_crs(intergen_geo)),
+    color = "white",
+    alpha = 0,
+    inherit.aes = FALSE
+  ) +
+  ggplot2::scale_fill_identity() +
+  ggplot2::labs(
+    title = paste(
+      "The Geography of Economic Mobility and",
+      "Air Pollution in the United States"
+    ),
+    subtitle = paste(
+      "Average economic mobility and annual PM2.5",
+      "(\U03BCg/m\U00B3) in U.S. commuting zones"
+    )
+  ) +
+  ggplot2::theme(
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    panel.grid.major = ggplot2::element_line(
+      color = "gray92",
+      linewidth = 0.2
+    ),
+    panel.grid.minor = ggplot2::element_blank(),
+    plot.background = ggplot2::element_rect(fill = "#F5F5F2", color = NA),
+    panel.background = ggplot2::element_rect(fill = "#F5F5F2", color = NA),
+    plot.title = ggplot2::element_text(face = "bold", hjust = 0.5, size = 18),
+    plot.subtitle = ggplot2::element_text(hjust = 0.5, size = 15),
+    legend.title = ggplot2::element_blank(),
+    text = ggplot2::element_text(family = font_fam)
+  )
+
+# Add annotations
+for (row in 1:nrow(annotations)) {
+  pollution_inequality_map <- pollution_inequality_map +
+    ggplot2::geom_curve(
+      data = annotations[row, ],
+      mapping = ggplot2::aes(x = from_x, xend = to_x, y = from_y, yend = to_y),
+      curvature = annotations[row, ]$curvature,
+      linewidth = 0.3,
+      arrow = ggplot2::arrow(length = ggplot2::unit(4, units = "pt")),
+      inherit.aes = FALSE
+    ) +
+    ggplot2::geom_text(
+      data = annotations[row, ],
+      ggplot2::aes(x = from_x, y = from_y, label = label),
+      inherit.aes = FALSE,
+      family = font_fam,
+      size = 3,
+      nudge_x = as.numeric(annotations[row, ]$nudge_x),
+      nudge_y = as.numeric(annotations[row, ]$nudge_y)
+    )
+}
+pollution_inequality_map <- pollution_inequality_map +
+  ggplot2::theme(axis.title = ggplot2::element_blank())
+
+# Combine the legend and the map
+intergen_mobility_and_pollution <- cowplot::ggdraw() +
+  cowplot::draw_plot(pollution_inequality_map, 0, 0, 1, 1) +
+  cowplot::draw_plot(legend, .03, .09, .2, .2)
+
+# Save the plot
+ggplot2::ggsave(
+  plot_path,
+  plot = intergen_mobility_and_pollution,
+  width = 16,
+  height = 14
+)
