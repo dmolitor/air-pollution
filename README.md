@@ -19,5 +19,5 @@ To replicate the visualization and all corresponding text and supplementary mate
 nextflow run main.nf
 ```
 The resulting write-up will be rendered in the `docs` directory, and
-[Figure 1](https://dmolitor.com/index.qmd#fig-1) will be rendered in the `src`
+[Figure 1](https://dmolitor.com/air-pollution/#fig-1) will be rendered in the `src`
 directory.
