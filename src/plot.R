@@ -416,12 +416,12 @@ pollution_inequality_map <- pollution_inequality_map +
 # Combine the legend and the map
 intergen_mobility_and_pollution <- cowplot::ggdraw() +
   cowplot::draw_plot(pollution_inequality_map, 0, 0, 1, 1) +
-  cowplot::draw_plot(legend, .03, .09, .2, .2)
+  cowplot::draw_plot(legend, .01, .15, .16, .16)
 
 # Save the plot
 ggplot2::ggsave(
   plot_path,
   plot = intergen_mobility_and_pollution,
   width = 16,
-  height = 14
+  height = 16
 )
